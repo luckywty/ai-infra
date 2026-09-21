@@ -1,0 +1,49 @@
+# Python virtual environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large binary files
+*.so
+*.whl
+*.dll
+*.dylib
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Model files (too large for git)
+models/**/*.bin
+models/**/*.safetensors
+models/**/*.gguf
+models/**/*.pt
+models/**/*.pth
+models/**/*.ckpt
+*.bin
+*.safetensors
+*.gguf
+*.pt
+*.pth
+*.ckpt
+*.pdf
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+*.swp
+
+# Embedded git repos (treat as submodules)
+Serving_V1/nano-vllm/
+Vllm_projects/vllm/
