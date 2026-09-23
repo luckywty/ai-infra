@@ -12,6 +12,11 @@ from nanovllm.utils.context import set_context, get_context, reset_context
 from nanovllm.utils.loader import load_model
 
 def resolve_dtype(cfg, default=torch.bfloat16):
+    '''
+    resolve_dtype 是一个兼容性辅助函数，
+    用来从 HuggingFace 模型配置里取出正确的 torch.dtype，
+    处理不同版本 transformers 的字段差异和字符串形式。
+    '''
     """兼容 transformers 4.55+：把 torch_dtype / dtype 统一成 torch.dtype。"""
     dtype = getattr(cfg, "torch_dtype", None) or getattr(cfg, "dtype", None)
     if isinstance(dtype, str):
@@ -55,6 +60,9 @@ class ModelRunner:
                 self.loop()
 
     def exit(self):
+        '''
+        负责在程序退出时释放分布式资源、共享内存、CUDA Graph，并同步所有进程
+        '''
         if self.world_size > 1:
             self.shm.close()
             dist.barrier()
@@ -110,17 +118,25 @@ class ModelRunner:
     def allocate_kv_cache(self):
         config = self.config
         hf_config = config.hf_config
-        free, total = torch.cuda.mem_get_info()
+        free, total = torch.cuda.mem_get_info()#返回当前 GPU 的空闲显存和总显存（字节）
         used = total - free
+        '''
+        peak 是历史上 PyTorch 分配过的最大量，
+        current 是当前还活着的量
+        '''
         peak = torch.cuda.memory_stats()["allocated_bytes.all.peak"]
         current = torch.cuda.memory_stats()["allocated_bytes.all.current"]
-        num_kv_heads = hf_config.num_key_value_heads // self.world_size
+        num_kv_heads = hf_config.num_key_value_heads // self.world_size#计算当前这张卡实际需要负责的 KV 头数量
         head_dim = getattr(hf_config, "head_dim", hf_config.hidden_size // hf_config.num_attention_heads)
         block_bytes = 2 * hf_config.num_hidden_layers * self.block_size * num_kv_heads * head_dim * self.dtype.itemsize
         config.num_kvcache_blocks = int(total * config.gpu_memory_utilization - used - peak + current) // block_bytes
         assert config.num_kvcache_blocks > 0
         self.kv_cache = torch.empty(2, hf_config.num_hidden_layers, config.num_kvcache_blocks, self.block_size, num_kv_heads, head_dim)
         layer_id = 0
+        '''
+        把预分配的大 KV Cache tensor 按层切片，
+        分别绑定到模型每个注意力层的 k_cache 和 v_cache 属性上
+        '''
         for module in self.model.modules():
             if hasattr(module, "k_cache") and hasattr(module, "v_cache"):
                 module.k_cache = self.kv_cache[0, layer_id]
@@ -134,6 +150,13 @@ class ModelRunner:
         return block_tables
 
     def prepare_prefill(self, seqs: list[Sequence]):
+        '''
+        把 prefill 阶段的多个序列打包成模型前向所需的输入张量,
+
+
+        它要处理变长序列、前缀缓存、PagedAttention 的物理位置映射，
+        并把所有信息通过 set_context 存到全局上下文，供模型各层使用
+        '''
         input_ids = []
         positions = []
         cu_seqlens_q = [0]
@@ -177,6 +200,11 @@ class ModelRunner:
         return input_ids, positions
 
     def prepare_decode(self, seqs: list[Sequence]):
+        '''
+        把 decode 阶段的多个序列打包成模型前向所需的输入张量,
+
+        每个序列只需要处理最后一个 token，然后生成下一个 token
+        '''
         input_ids = []
         positions = []
         slot_mapping = []

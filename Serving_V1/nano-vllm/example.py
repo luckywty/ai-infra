@@ -10,9 +10,17 @@ def main():
 
     sampling_params = SamplingParams(temperature=0.6, max_tokens=256)
     prompts = [
-        "introduce yourself",
-        "list all prime numbers within 100",
-    ]
+    "introduce yourself",
+    "list all prime numbers within 100",
+    "Place,",
+    "MY",
+    "Explain the theory of relativity in simple terms.",
+    "Write a short poem about artificial intelligence.",
+    "What are the benefits of regular exercise?",
+    "Describe the water cycle step by step.",
+    "How does a neural network learn from data?",
+    "Tell me a joke about programmers.",
+]
     prompts = [
         tokenizer.apply_chat_template(
             [{"role": "user", "content": prompt}],

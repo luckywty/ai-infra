@@ -45,5 +45,4 @@ models/**/*.ckpt
 *.swp
 
 # Embedded git repos (treat as submodules)
-Serving_V1/nano-vllm/
 Vllm_projects/vllm/

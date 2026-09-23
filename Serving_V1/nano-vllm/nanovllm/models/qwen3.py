@@ -85,7 +85,7 @@ class Qwen3Attention(nn.Module):
         q, k = self.rotary_emb(positions, q, k)
         o = self.attn(q, k, v)
         output = self.o_proj(o.flatten(1, -1))
-        return output
+        return output   #输出形状 [num_tokens, hidden_size]
 
 
 class Qwen3MLP(nn.Module):
@@ -118,6 +118,7 @@ class Qwen3MLP(nn.Module):
 
 
 class Qwen3DecoderLayer(nn.Module):
+    #单层解码器
 
     def __init__(
         self,
@@ -207,6 +208,11 @@ class Qwen3ForCausalLM(nn.Module):
         input_ids: torch.Tensor,
         positions: torch.Tensor,
     ) -> torch.Tensor:
+        '''
+        输出是 Qwen3Model 返回的 hidden states，
+        也就是最后一层 Transformer 的输出，
+        还没有经过 lm_head 投影到词表
+        '''
         return self.model(input_ids, positions)
 
     def compute_logits(

@@ -23,6 +23,7 @@ class Scheduler:
         self.waiting.append(seq)
 
     def schedule(self) -> tuple[list[Sequence], bool]:
+        '''决定这一步要处理哪些序列，是 prefill 还是 decode，并为它们准备好 KV Cache 块'''
         scheduled_seqs = []
         num_batched_tokens = 0
 
@@ -70,15 +71,24 @@ class Scheduler:
                 scheduled_seqs.append(seq)
         assert scheduled_seqs
         self.running.extendleft(reversed(scheduled_seqs))
+        '''scheduled_seqs：这一步要交给模型运行的序列列表；
+
+            is_prefill：True 表示 prefill 阶段，False 表示 decode 阶段。
+        '''
         return scheduled_seqs, False
 
     def preempt(self, seq: Sequence):
+        '''preempt 会释放这个序列当前占用的所有物理块'''
         seq.status = SequenceStatus.WAITING
         seq.is_prefill = True
         self.block_manager.deallocate(seq)
         self.waiting.appendleft(seq)
 
     def postprocess(self, seqs: list[Sequence], token_ids: list[int], is_prefill: bool):
+        '''在模型前向计算完成后调用的后处理函数。
+        它负责把 model_runner 返回的新 token 写回序列、更新缓存计数、注册可复用的 KV Cache 块、判断序列是否结束，
+        并在结束时释放资源
+        '''
         for seq, token_id in zip(seqs, token_ids):
             self.block_manager.hash_blocks(seq)
             seq.num_cached_tokens += seq.num_scheduled_tokens
