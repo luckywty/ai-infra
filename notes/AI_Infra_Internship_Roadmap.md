@@ -1,8 +1,10 @@
 # AI Infra / LLM 推理系统实习：项目审计、岗位证据与 8 周路线
 
-调研及代码复核日期：**2026-10-14，Asia/Shanghai**。本次仅调研、评估和规划；没有修改业务源码、实现新优化或执行耗时 Benchmark，也没有自动推送本报告。
+> 调研及代码复核日期：**2026-10-14，Asia/Shanghai**。本次仅调研、评估和规划；没有修改业务源码、实现新优化或执行耗时 Benchmark，也没有自动推送本报告。
 
 对象：211 本科、985 研一，目标是第一份推理系统实习。学历和已接触技术来自本人陈述，不等于技能测评结论。新增约束为：**广东省优先，2027 年 2 月左右到岗，每周 3–4 天，连续约 3–4 个月**。最后一项原话为“可连续学习”，下文暂按可连续实习理解，投递前确认；毕业年份、导师许可和具体可到岗日仍待确认。
+
+---
 
 ## 1. 执行摘要：当前最值得做的三件事
 
@@ -10,7 +12,7 @@
 2. **用限时编程与实际 trace 补齐 C++、系统和 Profiling 的证据。** 每周 3 小时 C++、3 小时算法持续训练；先学 CUDA 执行/访存/异步基础，再用一个小 Triton 算子完成正确性—计时—瓶颈分析闭环。不能由仓库存在 CUDA 代码推断你会 CUDA。
 3. **沿已有项目进入正式 SGLang，并提前筛选到岗资格。** 第 6 周开始只读一条正式框架调用链，做一个有范围的小测试/问题定位；不同时学透 vLLM 和 SGLang。第 4 周即启动试投/联系，第 8 周形成主材料，2027 年 1 月再次确认 2 月 HC 和到岗安排。
 
-**推荐主线：mini-sglang 实验闭环 → 正式 SGLang 的调度/缓存模块。辅助线：一个独立目录内的小型 CUDA/Triton 算子实验，预算约 16–24 小时。** 不另开完整推理框架，不把多卡通信、完整论文复现、编译器、量化工具链一起纳入 8 周必修。
+> **推荐主线：mini-sglang 实验闭环 → 正式 SGLang 的调度/缓存模块。辅助线：一个独立目录内的小型 CUDA/Triton 算子实验，预算约 16–24 小时。** 不另开完整推理框架，不把多卡通信、完整论文复现、编译器、量化工具链一起纳入 8 周必修。
 
 你的项目已经有成为简历核心项目的结构；目前最弱的是“性能与个人掌握程度的证据”，不能据此给出已达某公司录用标准的结论。到岗天数、实习月数及城市约束也可能比新增技术更早决定能否投递。
 
@@ -19,6 +21,8 @@
 以 2026-10-15 开始，主计划 8 周至 12 月 9 日，延伸 12 周至 2027-01-06。每天 3–4 小时，采用**每周 24 小时**预算：主线及辅助实践 16h、C++3h、算法 3h、求职/表达 2h，合计 192h。资源阅读计入这些时段；GPU 批量运行的等待时间另计，不要求你一直盯屏。每周只有 21h 时先减辅助线和 P2，不先削掉正确性与重复实验。
 
 “达到申请条件”的工作定义：能独立修改一个有测试的 Python 系统模块，能完成基本 C++ 手写题，能解释一条推理请求链和至少一个真实瓶颈，能拿出同条件配对实验及失败记录。它不是保证拿到实习 offer；不同 JD 的底层、研究、平台要求差别很大。
+
+---
 
 ## 2. mini-sglang 已完成项目审计
 
@@ -36,17 +40,17 @@
 复杂度是模块实现的相对判断，不是对个人水平打分。状态 V=所列 CPU 语义测试已覆盖，G=真实 GPU/端到端仍待验证，P=仅规划。
 
 | 实际模块与状态 | 关键知识 | 工程复杂度 | 已有证据 | 能力缺口/边界 | 简历价值 |
-|---|---|---|---|---|---|
-| A：Radix 两阶段准入，V+G | speculative probe、ref count、锁后容量、LRU、版本失效 | 中高；跨缓存/准入接口 | `MatchProbe`，probe/refresh/commit；拒绝快照、partial split、保护成本测试 | 缺旧路径独立 A/B；多个父链遍历仍在；串行提交不等于并发事务；异常回滚不完整 | 很适合讲工程正确性和资源生命周期；未测前不写 GPU 加速 |
-| B：FCFS/LPM/LPM-Aging，V+G | 稳定排序、缓存局部性、公平、有效机会计数 | 中；队列身份和 chunk 状态易错 | `_get_candidates`、`waiting_passes`；稳定序、fallback、无效轮不老化、重排后移除测试 | 候选失败即 break、chunk 先续算、资源不足会阻塞；无墙钟服务上界 | 与缓存/调度岗位直接相关；需 cold 等待与吞吐双报 |
-| C：bounded Decode-first，V+G | 阶段竞争、连续批处理、提交与完成次序 | 中；overlap 边界重要 | `_select_next_batch`、`_record_batch_submission`；K 边界、失败保持 streak、normal/overlap 替身测试 | K 限制尝试前的 Decode 提交批次，不保证准入；不抢占 GPU 计算 | 最值得先测真实混合负载 ITL 尾部 |
-| D：动态保护预算，V+G | workload signal、clamp、chunk 成本/延迟权衡 | 公式低、集成中 | `min(U,max(floor,target-n_decode))`、配置约束、动态数量与 chunk 生命周期测试 | 依赖 C；只调 Prefill-only 保护批；不是混合 batch、时间反馈或动态 KV 预留；8GB 低 batch 下变化可能很小 | 可作边际实验；不是最强的独立创新点 |
-| Overlap scheduling，继承能力 | CUDA streams、event、CPU/GPU 流水 | 原机制复杂，但此次无独立改造证据 | `overlap_loop` 及既有 D2H 同步；新增 C/D 适配测试 | 没有真实 trace 证明 overlap 收益；大量 diff 为说明注释 | 可讲理解和兼容验证，不能写“独立实现 Overlap 引擎” |
-| KV 物理页管理，继承 + 局部准入改造 | 页舍入、共享页保护、future reservation、回收 | 中高 | CacheManager 与资源测试；page1/4 场景 | 已有审计记录 page>1 多新请求尾页预留缺口；没有通用异常回滚；`check_integrity()` 在 Radix 类仍为 pass | 适合展示边界分析；不应宣称已全面解决 OOM |
-| Benchmark/指标，CPU 已有、GPU 流程 P | 计时域、trace 回放、分位数、重复与 SLO | 工具中等、方法要求高 | 既有 CPU harness/JSON；五份规划 | 旧 client 请求开始计时太晚、事件计数混用；精确 token/请求终态采集待实施 | 完成后会明显提高整个项目可信度 |
-| CUDA/Triton/TP，主要为继承 | kernel、warp、FFI、NCCL/TP | 底层高，但个人贡献未证实 | 仓库有 C++/CUDA/Triton/通信实现；本次这些目录无 tracked 改动 | 无个人 kernel、nsys/ncu 报告或多 GPU 实验可确认 | 暂不能写“熟练算子优化/分布式推理” |
+| --- | --- | --- | --- | --- | --- |
+| **A：Radix 两阶段准入，V+G** | speculative probe、ref count、锁后容量、LRU、版本失效 | 中高；跨缓存/准入接口 | `MatchProbe`，probe/refresh/commit；拒绝快照、partial split、保护成本测试 | 缺旧路径独立 A/B；多个父链遍历仍在；串行提交不等于并发事务；异常回滚不完整 | 很适合讲工程正确性和资源生命周期；未测前不写 GPU 加速 |
+| **B：FCFS/LPM/LPM-Aging，V+G** | 稳定排序、缓存局部性、公平、有效机会计数 | 中；队列身份和 chunk 状态易错 | `_get_candidates`、`waiting_passes`；稳定序、fallback、无效轮不老化、重排后移除测试 | 候选失败即 break、chunk 先续算、资源不足会阻塞；无墙钟服务上界 | 与缓存/调度岗位直接相关；需 cold 等待与吞吐双报 |
+| **C：bounded Decode-first，V+G** | 阶段竞争、连续批处理、提交与完成次序 | 中；overlap 边界重要 | `_select_next_batch`、`_record_batch_submission`；K 边界、失败保持 streak、normal/overlap 替身测试 | K 限制尝试前的 Decode 提交批次，不保证准入；不抢占 GPU 计算 | 最值得先测真实混合负载 ITL 尾部 |
+| **D：动态保护预算，V+G** | workload signal、clamp、chunk 成本/延迟权衡 | 公式低、集成中 | `min(U,max(floor,target-n_decode))`、配置约束、动态数量与 chunk 生命周期测试 | 依赖 C；只调 Prefill-only 保护批；不是混合 batch、时间反馈或动态 KV 预留；8GB 低 batch 下变化可能很小 | 可作边际实验；不是最强的独立创新点 |
+| **Overlap scheduling，继承能力** | CUDA streams、event、CPU/GPU 流水 | 原机制复杂，但此次无独立改造证据 | `overlap_loop` 及既有 D2H 同步；新增 C/D 适配测试 | 没有真实 trace 证明 overlap 收益；大量 diff 为说明注释 | 可讲理解和兼容验证，不能写“独立实现 Overlap 引擎” |
+| **KV 物理页管理，继承 + 局部准入改造** | 页舍入、共享页保护、future reservation、回收 | 中高 | CacheManager 与资源测试；page1/4 场景 | 已有审计记录 page>1 多新请求尾页预留缺口；没有通用异常回滚；`check_integrity()` 在 Radix 类仍为 pass | 适合展示边界分析；不应宣称已全面解决 OOM |
+| **Benchmark/指标，CPU 已有、GPU 流程 P** | 计时域、trace 回放、分位数、重复与 SLO | 工具中等、方法要求高 | 既有 CPU harness/JSON；五份规划 | 旧 client 请求开始计时太晚、事件计数混用；精确 token/请求终态采集待实施 | 完成后会明显提高整个项目可信度 |
+| **CUDA/Triton/TP，主要为继承** | kernel、warp、FFI、NCCL/TP | 底层高，但个人贡献未证实 | 仓库有 C++/CUDA/Triton/通信实现；本次这些目录无 tracked 改动 | 无个人 kernel、nsys/ncu 报告或多 GPU 实验可确认 | 暂不能写“熟练算子优化/分布式推理” |
 
-代码定位：[cache.py](../python/minisgl/scheduler/cache.py)的 `try_match_and_lock` L40/`allocate_paged` L81；[radix_cache.py](../python/minisgl/kvcache/radix_cache.py)的 probe L175、refresh L204、commit L222、reset L289、integrity L300；[prefill.py](../python/minisgl/scheduler/prefill.py)的候选排序 L165/调度 L213；[scheduler.py](../python/minisgl/scheduler/scheduler.py) 的预算 L299、阶段 L311、提交 L340、overlap L100；[配置](../python/minisgl/scheduler/config.py)、[测试](../tests/core/test_prefill_policy.py)。行号对应本次工作区。
+**代码定位：**[cache.py](../python/minisgl/scheduler/cache.py)的 `try_match_and_lock` L40/`allocate_paged` L81；[radix_cache.py](../python/minisgl/kvcache/radix_cache.py)的 probe L175、refresh L204、commit L222、reset L289、integrity L300；[prefill.py](../python/minisgl/scheduler/prefill.py)的候选排序 L165/调度 L213；[scheduler.py](../python/minisgl/scheduler/scheduler.py) 的预算 L299、阶段 L311、提交 L340、overlap L100；[配置](../python/minisgl/scheduler/config.py)、[测试](../tests/core/test_prefill_policy.py)。行号对应本次工作区。
 
 ### 2.3 实现、测试和性能必须分别表述
 
@@ -62,6 +66,8 @@ B 的分数为 `实际估算缓存长度+N×有效等待轮`。只有本轮准�
 - 当前 diff 体现的工程工作包括：拒绝前无副作用预测、stale probe 刷新、按对象身份处理重排队列、有效准入轮计数、按实际提交而非选择计 K，以及相应边界测试。这些比“公式看起来复杂”更有面试价值。
 - 单凭源码无法核定哪些由你独立设计、哪些参考方案或由 AI 协助。个人贡献需要设计记录、限时复写、故障定位和追问解释验证；使用辅助工具本身不减分，不能解释或验证生成代码才是风险。
 - 要能主动给反例：无资源时 Aging 不保证服务；小 chunk 仍需完整未来 KV 预留；大 target 让 D 恒为固定上限；队列超阈值让 LPM 空转；S-default 依然执行 A，不能当原版。
+
+---
 
 ## 3. 真实岗位调研：14 个条目及来源边界
 
@@ -132,14 +138,16 @@ B 的分数为 `实际估算缓存长度+N×有效等待轮`。只有本轮准�
 ### 3.2 广东投递取舍
 
 | 跟进顺序 | 条目/岗位类型 | 下一步确认什么 | 当前结论 |
-|---|---|---|---|
-| 1 | J12 百度深圳推理、同类日常推理引擎/缓存岗 | 是否接受 2027-02 到岗、每周 4 天和 3–4 个月；独立 JD 及毕业限制 | 最贴主线，资格未完全核实 |
-| 2 | J08 蔚来深圳推理框架、J11 影石框架/部署 | 先找到官方有效 JD；2 月时间、周天数、具体模型/框架范围 | 条件候选，不承诺仍有 HC |
-| 3 | J09 深圳通信/框架实习 | 周天数、月数、项目 scope；是否允许以推理框架而非通信 kernel 切入 | 挑战投递，不为其提前做完整多卡项目 |
-| 4 | J04 Firmior | 页头/正文冲突、时长与到岗；核实团队和岗位 | 条件确认后再决定，技术短板也较多 |
-| 5 | J05/J06 算子或平台邻近岗位 | 能否接受每周 4 天 | 按当前 5 天要求不匹配；不能默认会放宽 |
+| --- | --- | --- | --- |
+| **1** | J12 百度深圳推理、同类日常推理引擎/缓存岗 | 是否接受 2027-02 到岗、每周 4 天和 3–4 个月；独立 JD 及毕业限制 | 最贴主线，资格未完全核实 |
+| **2** | J08 蔚来深圳推理框架、J11 影石框架/部署 | 先找到官方有效 JD；2 月时间、周天数、具体模型/框架范围 | 条件候选，不承诺仍有 HC |
+| **3** | J09 深圳通信/框架实习 | 周天数、月数、项目 scope；是否允许以推理框架而非通信 kernel 切入 | 挑战投递，不为其提前做完整多卡项目 |
+| **4** | J04 Firmior | 页头/正文冲突、时长与到岗；核实团队和岗位 | 条件确认后再决定，技术短板也较多 |
+| **5** | J05/J06 算子或平台邻近岗位 | 能否接受每周 4 天 | 按当前 5 天要求不匹配；不能默认会放宽 |
 
-当前样本中**没有一条已被完整核验为“广东 +2 月入职 +3–4 天 +3–4 个月全部满足”**，不代表市场不存在这种岗位。至少每两周刷新；先确认资格，再按 JD 分配学习投入。你若能稳定 4 天，通常比在“3–4 天”间摇摆更便于约定，但不能承诺做不到的时长。研一并不自动满足 2027 届定向实习，毕业年份须真实填写。
+> 当前样本中**没有一条已被完整核验为“广东 +2 月入职 +3–4 天 +3–4 个月全部满足”**，不代表市场不存在这种岗位。至少每两周刷新；先确认资格，再按 JD 分配学习投入。你若能稳定 4 天，通常比在“3–4 天”间摇摆更便于约定，但不能承诺做不到的时长。研一并不自动满足 2027 届定向实习，毕业年份须真实填写。
+
+---
 
 ## 4. 岗位能力需求矩阵与统计边界
 
@@ -152,51 +160,53 @@ B 的分数为 `实际估算缓存长度+N×有效等待轮`。只有本轮准�
 ### 4.2 出现频率
 
 | 能力 | R | D | + | 任一出现/11 | 比例 | 正文直接可读子集 J01–J06 /6 | 对本路线的解释 |
-|---|---:|---:|---:|---:|---:|---:|---|
-| Python | 10 | 0 | 0 | 10 | 91% | 6 | 最通用；含语言备选，仍须独立编码/调试 |
-| C/C++ | 9 | 0 | 0 | 9 | 82% | 5 | 高价值基础；不能解释为 9 岗都同时要求熟练 C++ 和 Python |
-| 明确现代 C++ 版本/特性 | 0 | 0 | 0 | 0 | 0% | 0 | J14 历史工具链岗明确要求；主样本不写不代表可不懂生命周期 |
-| CUDA/Triton | 4 | 0 | 4 | 8 | 73% | 4 | 强底层岗为硬项，Serving/部署岗常为加分；CUDA 与 Triton 非人人都要 |
-| 硬件体系结构/内存层次 | 2 | 1 | 2 | 5 | 45% | 3 | 算子/性能方向更重要，区分 GPU/NPU 背景 |
-| PyTorch | 2 | 1 | 1 | 4 | 36% | 3 | 显式计数，未从“深度学习框架”泛称补计 |
-| Linux | 4 | 0 | 0 | 4 | 36% | 2 | 文本低估通用开发前提；仍是本地 Serving 实验必需 |
-| OS/内存/并发基础显式条款 | 1 | 0 | 0 | 1 | 9% | 0 | 口径严格，不从 C++/Linux 推断；项目本身强烈要求这些能力 |
-| 网络/RPC/通信基础 | 3 | 0 | 1 | 4 | 36% | 2 | 系统/平台与通信岗更突出；R 也有方向备选 |
-| 分布式/并行 | 3 | 1 | 0 | 4 | 36% | 1 | 分布式基础与多卡调优不是同一级；后者不必 8 周全部实现 |
-| LLM 结构/推理 | 5 | 3 | 1 | 9 | 82% | 6 | 结构和运行特性必须能讲透 |
-| KV Cache/缓存管控 | 0 | 4 | 0 | 4 | 36% | 2 | 特定 Serving 岗职责核心；PagedAttention 未单独当多数硬项 |
-| Continuous Batching | 0 | 2 | 0 | 2 | 18% | 1 | 更适合做项目深度证据，非所有 Infra 岗关键词 |
-| CUDA Graph | 0 | 0 | 0 | 0 | 0% | 0 | 是当前引擎实测必要控制变量，不因为频率 0 就忽略 |
-| 量化/压缩 | 1 | 2 | 0 | 3 | 27% | 1 | 部分部署/端侧核心；本轮基线不改变精度，先掌握概念 |
-| Profiling/性能分析 | 2 | 1 | 4 | 7 | 64% | 3 | 高收益补齐点，应产生 trace/定位报告而非只会工具命令 |
-| Benchmark/性能评测 | 0 | 3 | 1 | 4 | 36% | 2 | 是证明优化价值的方法；JD 不一定写统计术语 |
-| vLLM/SGLang 明确提及 | 1 | 1 | 4 | 6 | 55% | 3 | 源码/贡献通常是加分或职责，选择一个正式框架即可 |
-| 测试/正确性/兼容性 | 0 | 5 | 0 | 5 | 45% | 2 | 工程岗位需要闭环；不能只展示最快路径 |
-| 容器/云原生 | 0 | 2 | 2 | 4 | 36% | 2 | 平台方向重要；当前主线只做部署/隔离基础，不全学 K8s 开发 |
-| kernel 实现/调优 | 1 | 3 | 0 | 4 | 36% | 2 | 岗位分化明显，小项目补证即可，核心算子岗另需更高深度 |
-| LLVM/MLIR 明确要求 | 1 | 0 | 0 | 1 | 9% | 0 | 针对 J10，不升为全部岗位的必修 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| **Python** | 10 | 0 | 0 | 10 | 91% | 6 | 最通用；含语言备选，仍须独立编码/调试 |
+| **C/C++** | 9 | 0 | 0 | 9 | 82% | 5 | 高价值基础；不能解释为 9 岗都同时要求熟练 C++ 和 Python |
+| **明确现代 C++ 版本/特性** | 0 | 0 | 0 | 0 | 0% | 0 | J14 历史工具链岗明确要求；主样本不写不代表可不懂生命周期 |
+| **CUDA/Triton** | 4 | 0 | 4 | 8 | 73% | 4 | 强底层岗为硬项，Serving/部署岗常为加分；CUDA 与 Triton 非人人都要 |
+| **硬件体系结构/内存层次** | 2 | 1 | 2 | 5 | 45% | 3 | 算子/性能方向更重要，区分 GPU/NPU 背景 |
+| **PyTorch** | 2 | 1 | 1 | 4 | 36% | 3 | 显式计数，未从“深度学习框架”泛称补计 |
+| **Linux** | 4 | 0 | 0 | 4 | 36% | 2 | 文本低估通用开发前提；仍是本地 Serving 实验必需 |
+| **OS/内存/并发基础显式条款** | 1 | 0 | 0 | 1 | 9% | 0 | 口径严格，不从 C++/Linux 推断；项目本身强烈要求这些能力 |
+| **网络/RPC/通信基础** | 3 | 0 | 1 | 4 | 36% | 2 | 系统/平台与通信岗更突出；R 也有方向备选 |
+| **分布式/并行** | 3 | 1 | 0 | 4 | 36% | 1 | 分布式基础与多卡调优不是同一级；后者不必 8 周全部实现 |
+| **LLM 结构/推理** | 5 | 3 | 1 | 9 | 82% | 6 | 结构和运行特性必须能讲透 |
+| **KV Cache/缓存管控** | 0 | 4 | 0 | 4 | 36% | 2 | 特定 Serving 岗职责核心；PagedAttention 未单独当多数硬项 |
+| **Continuous Batching** | 0 | 2 | 0 | 2 | 18% | 1 | 更适合做项目深度证据，非所有 Infra 岗关键词 |
+| **CUDA Graph** | 0 | 0 | 0 | 0 | 0% | 0 | 是当前引擎实测必要控制变量，不因为频率 0 就忽略 |
+| **量化/压缩** | 1 | 2 | 0 | 3 | 27% | 1 | 部分部署/端侧核心；本轮基线不改变精度，先掌握概念 |
+| **Profiling/性能分析** | 2 | 1 | 4 | 7 | 64% | 3 | 高收益补齐点，应产生 trace/定位报告而非只会工具命令 |
+| **Benchmark/性能评测** | 0 | 3 | 1 | 4 | 36% | 2 | 是证明优化价值的方法；JD 不一定写统计术语 |
+| **vLLM/SGLang 明确提及** | 1 | 1 | 4 | 6 | 55% | 3 | 源码/贡献通常是加分或职责，选择一个正式框架即可 |
+| **测试/正确性/兼容性** | 0 | 5 | 0 | 5 | 45% | 2 | 工程岗位需要闭环；不能只展示最快路径 |
+| **容器/云原生** | 0 | 2 | 2 | 4 | 36% | 2 | 平台方向重要；当前主线只做部署/隔离基础，不全学 K8s 开发 |
+| **kernel 实现/调优** | 1 | 3 | 0 | 4 | 36% | 2 | 岗位分化明显，小项目补证即可，核心算子岗另需更高深度 |
+| **LLVM/MLIR 明确要求** | 1 | 0 | 0 | 1 | 9% | 0 | 针对 J10，不升为全部岗位的必修 |
 
-样本小、非随机、按主题搜索，且 C/D 渠道有可访问性偏差。此表是**11 条 JD 文本的描述统计，不是全国岗位比例或录用概率**。直接正文子集仅 6 条，用于看渠道差异，不能视为独立验证样本。J14 下线、J12 缺任职正文、J13 混合课题没有混进分母。核心优先级同时依据项目缺口、硬件和收益时间，不能单按词频排序。
+> 样本小、非随机、按主题搜索，且 C/D 渠道有可访问性偏差。此表是**11 条 JD 文本的描述统计，不是全国岗位比例或录用概率**。直接正文子集仅 6 条，用于看渠道差异，不能视为独立验证样本。J14 下线、J12 缺任职正文、J13 混合课题没有混进分母。核心优先级同时依据项目缺口、硬件和收益时间，不能单按词频排序。
 
 ### 4.3 复核编码表
 
 简写：P=Python，C=C++，U=CUDA/Triton，H=硬件架构，T=PyTorch，L=Linux，S=OS/并发/内存，N=网络，D=分布式，M=LLM，K=KV，B=Continuous Batching，Q=量化，F=Profiling，E=Benchmark，V=vLLM/SGLang，X=测试，O=容器，Z=kernel，I=编译。未列项为—。R 中的 OR/方向备选按原 JD 读取。
 
 | JD | R（含备选） | D 职责 | + 优先 |
-|---|---|---|---|
-| J01 | P C U T D M F V | K Q | — |
-| J02 | P C L | M | H U O |
-| J03 | P C | M | T V N |
-| J04 | P C U H T M F | E Z | — |
-| J05 | P C H M | E X Z | U F |
-| J06 | P L N | K B M X O | V |
-| J07 | P C S N D L | K E X | M F V O |
-| J08 | P L M | D K B Q O X | U F E V |
-| J09 | P C U D M N Z | T V | F |
-| J10 | P C U I | H F Z | — |
-| J11 | C Q | X | H U |
+| --- | --- | --- | --- |
+| **J01** | P C U T D M F V | K Q | — |
+| **J02** | P C L | M | H U O |
+| **J03** | P C | M | T V N |
+| **J04** | P C U H T M F | E Z | — |
+| **J05** | P C H M | E X Z | U F |
+| **J06** | P L N | K B M X O | V |
+| **J07** | P C S N D L | K E X | M F V O |
+| **J08** | P L M | D K B Q O X | U F E V |
+| **J09** | P C U D M N Z | T V | F |
+| **J10** | P C U I | H F Z | — |
+| **J11** | C Q | X | H U |
 
 此表不对“部署”另计频率；J02/J05/J06/J08/J11 等职责详情已列部署方向。对“必须”和“优先”有歧义时保守按原文级别，不提升要求。下一次更新岗位快照时应重新编码，而不是沿用本表比例。
+
+---
 
 ## 5. 个人能力缺口：证据、目标与快速诊断
 
@@ -205,43 +215,43 @@ B 的分数为 `实际估算缓存长度+N×有效等待轮`。只有本轮准�
 ### A. LLM 推理理论
 
 | 能力点 | 目标水平 | 可确认的已有证据 | 当前判断与不确定性 | 是否补/优先级 | 快速验证（每项 1–3 问或任务） |
-|---|---|---|---|---|---|
-| Transformer/GQA/KV 形状 | L2，能从 config 算容量 | 项目使用 GQA 模型和 KV 池；未改模型层 | 接触自述，推导能力待验证 | 必补 P0，D01 | 20min：写出 Q/K/V 与 KV cache 形状；推导 Qwen3-0.6B BF16 每 token112KiB；说明为什么用 KV heads 而非 Q heads |
-| Prefill/Decode 成本 | L2，按 shape 讨论瓶颈 | 调度按两阶段分支 | 逻辑使用已证实，计算/带宽判断待验证 | 必补 P0，D02 | 给定短/长 context、batch1/16，列权重与 KV 读写量；解释为何“Decode 总是带宽瓶颈”并非无条件成立 |
-| 采样/EOS/数值正确性 | L2，能发现截断/重复/偏差 | SamplingParams、结果路径存在；核心未改采样 | 数值验收和 token 计数尚缺 GPU 证据 | 必补 P0，D03 | 用 O=1/32、自然 EOS 和 ignore_eos 三例定义实际 O；解释为何文本重分词未必还原生成 IDs；设计跨 chunk 参考验证 |
-| 量化和精度概念 | L1，本轮不实现量化 | 本地有量化模型目录不算贡献；本实验固定 BF16 | 实践待验证，不是主缺口 | 概念 P1，实现 P2，D04 | 区分 weight-only、activation 和 KV 量化分别省哪块内存；解释相同 dtype/权重为何是调度对照控制变量 |
+| --- | --- | --- | --- | --- | --- |
+| **Transformer/GQA/KV 形状** | L2，能从 config 算容量 | 项目使用 GQA 模型和 KV 池；未改模型层 | 接触自述，推导能力待验证 | 必补 P0，D01 | 20min：写出 Q/K/V 与 KV cache 形状；推导 Qwen3-0.6B BF16 每 token112KiB；说明为什么用 KV heads 而非 Q heads |
+| **Prefill/Decode 成本** | L2，按 shape 讨论瓶颈 | 调度按两阶段分支 | 逻辑使用已证实，计算/带宽判断待验证 | 必补 P0，D02 | 给定短/长 context、batch1/16，列权重与 KV 读写量；解释为何“Decode 总是带宽瓶颈”并非无条件成立 |
+| **采样/EOS/数值正确性** | L2，能发现截断/重复/偏差 | SamplingParams、结果路径存在；核心未改采样 | 数值验收和 token 计数尚缺 GPU 证据 | 必补 P0，D03 | 用 O=1/32、自然 EOS 和 ignore_eos 三例定义实际 O；解释为何文本重分词未必还原生成 IDs；设计跨 chunk 参考验证 |
+| **量化和精度概念** | L1，本轮不实现量化 | 本地有量化模型目录不算贡献；本实验固定 BF16 | 实践待验证，不是主缺口 | 概念 P1，实现 P2，D04 | 区分 weight-only、activation 和 KV 量化分别省哪块内存；解释相同 dtype/权重为何是调度对照控制变量 |
 
 ### B. GPU 底层性能
 
 | 能力点 | 目标水平 | 可确认的已有证据 | 当前判断与不确定性 | 是否补/优先级 | 快速验证 |
-|---|---|---|---|---|---|
-| CUDA 执行与异步 | L2 小程序，不要求复杂 kernel | 上游 store/index CUDA、stream/event 调用；无相关 diff | 个人 kernel 能力待验证 | 基础 P0，D05 | 30min 说明 grid/block/warp 与 mask；写 vector add 边界；解释 CPU 包住 launch 的计时为什么可能偏小 |
-| 访存/归约/资源限制 | L1→L2 | 仓库有 warp copy，未见个人优化 | coalescing、shared memory、register/occupancy 待验证 | P1，D06 | 比较连续与跨步访问；解释高 occupancy 不必最快；给一个 block 调大反而变慢的可检验原因 |
-| nsys/ncu 与性能建模 | L2→L3 一个小范围 | 无本人 GPU trace 报告 | **明确缺证据**，是高收益补齐点 | nsys P0、ncu P1，D07 | 从 warmup 后的 trace 标出 CPU 调度、kernel、H2D/D2H 与等待；区分 host stall、launch gap 和 kernel 长；只选一个热点做 ncu |
-| Triton mask/stride/reduction | L2 单算子 | 存在上游 fused MoE 代码，未改 | 不能由“仓库有 Triton”认定掌握 | P1，D08 | 独立写行归约/RMSNorm，覆盖非整块宽度、FP32/BF16；明确支持/拒绝的 stride，做数值对照和计时 |
-| Tensor Core/低层汇编 | L1 知道适用条件 | 没有个人 GEMM/CUTLASS/PTX 优化证据 | 暂不以此申请核心 GPU 库岗 | 概念 P1，优化 P2，D09 | 解释何时算子无法利用 Tensor Core；指出 RMSNorm 和 GEMM 在算术强度上的区别；不要求手写 SASS |
+| --- | --- | --- | --- | --- | --- |
+| **CUDA 执行与异步** | L2 小程序，不要求复杂 kernel | 上游 store/index CUDA、stream/event 调用；无相关 diff | 个人 kernel 能力待验证 | 基础 P0，D05 | 30min 说明 grid/block/warp 与 mask；写 vector add 边界；解释 CPU 包住 launch 的计时为什么可能偏小 |
+| **访存/归约/资源限制** | L1→L2 | 仓库有 warp copy，未见个人优化 | coalescing、shared memory、register/occupancy 待验证 | P1，D06 | 比较连续与跨步访问；解释高 occupancy 不必最快；给一个 block 调大反而变慢的可检验原因 |
+| **nsys/ncu 与性能建模** | L2→L3 一个小范围 | 无本人 GPU trace 报告 | **明确缺证据**，是高收益补齐点 | nsys P0、ncu P1，D07 | 从 warmup 后的 trace 标出 CPU 调度、kernel、H2D/D2H 与等待；区分 host stall、launch gap 和 kernel 长；只选一个热点做 ncu |
+| **Triton mask/stride/reduction** | L2 单算子 | 存在上游 fused MoE 代码，未改 | 不能由“仓库有 Triton”认定掌握 | P1，D08 | 独立写行归约/RMSNorm，覆盖非整块宽度、FP32/BF16；明确支持/拒绝的 stride，做数值对照和计时 |
+| **Tensor Core/低层汇编** | L1 知道适用条件 | 没有个人 GEMM/CUTLASS/PTX 优化证据 | 暂不以此申请核心 GPU 库岗 | 概念 P1，优化 P2，D09 | 解释何时算子无法利用 Tensor Core；指出 RMSNorm 和 GEMM 在算术强度上的区别；不要求手写 SASS |
 
 ### C. 推理系统工程
 
 | 能力点 | 目标水平 | 可确认的已有证据 | 当前判断与不确定性 | 是否补/优先级 | 快速验证 |
-|---|---|---|---|---|---|
-| 请求全链路/Batching | L2 | API→Tokenizer→Scheduler→Engine→Detokenize 链存在，修改了部分调度 | 最接近你的项目主线；仍需独立复述 | P0，D10 | 15min 从 HTTP 入口画到首 token；指出 pending/active/chunked 在何处转移；说明 max running 与 client 并发区别 |
-| KV 生命周期/页预算 | L2，能维护不变量 | A 及页/引用测试 | 有实现线索，异常/紧内存边界仍缺验证 | P0，D11 | 手推 partial probe→split→lock→finish；复述已有 page4 反例；列资源拒绝与 GPU OOM 区别 |
-| 缓存排序/公平 | L2 | B 代码与 effective pass 测试 | 可作为强项目主题；个人推理待问答验证 | P0，D12 | 无资源时为何 Aging 不保服务；chunk-only 为何不加 waiting_passes；队列 129 时走哪条路径 |
-| 阶段选择/动态预算 | L2 | C/D 提交计数和 clamp 测试 | 已实现但真实收益未知 | C P0、D P1，D13 | 手推 K4 提交/失败/重试；给出 D 恒 U 及 floor 饱和的配置；解释为什么不是 Sarathi 混合 batch |
-| Overlap/CUDA Graph | L2 一个 trace | 继承机制，C/D 在替身循环有测试 | API 使用不等于已理解设备依赖 | P0 基础，D14 | 标出两条 stream 和 event 的 happens-before；解释为何 CPU prepare 时长不能当 GPU 时长；真实 batch/padding 怎么影响计数 |
-| 多 GPU/TP 与 PD 分离 | L1，能用成本模型解释 | 上游通信代码，单卡无独立验证 | 多卡性能调优待验证，8GB 单卡不是其证据 | 原理 P1、实践 P2，D15 | 画 TP 一层主要 collective；估算通信/计算量；区分同进程阶段调度与跨设备 PD 分离 |
+| --- | --- | --- | --- | --- | --- |
+| **请求全链路/Batching** | L2 | API→Tokenizer→Scheduler→Engine→Detokenize 链存在，修改了部分调度 | 最接近你的项目主线；仍需独立复述 | P0，D10 | 15min 从 HTTP 入口画到首 token；指出 pending/active/chunked 在何处转移；说明 max running 与 client 并发区别 |
+| **KV 生命周期/页预算** | L2，能维护不变量 | A 及页/引用测试 | 有实现线索，异常/紧内存边界仍缺验证 | P0，D11 | 手推 partial probe→split→lock→finish；复述已有 page4 反例；列资源拒绝与 GPU OOM 区别 |
+| **缓存排序/公平** | L2 | B 代码与 effective pass 测试 | 可作为强项目主题；个人推理待问答验证 | P0，D12 | 无资源时为何 Aging 不保服务；chunk-only 为何不加 waiting_passes；队列 129 时走哪条路径 |
+| **阶段选择/动态预算** | L2 | C/D 提交计数和 clamp 测试 | 已实现但真实收益未知 | C P0、D P1，D13 | 手推 K4 提交/失败/重试；给出 D 恒 U 及 floor 饱和的配置；解释为什么不是 Sarathi 混合 batch |
+| **Overlap/CUDA Graph** | L2 一个 trace | 继承机制，C/D 在替身循环有测试 | API 使用不等于已理解设备依赖 | P0 基础，D14 | 标出两条 stream 和 event 的 happens-before；解释为何 CPU prepare 时长不能当 GPU 时长；真实 batch/padding 怎么影响计数 |
+| **多 GPU/TP 与 PD 分离** | L1，能用成本模型解释 | 上游通信代码，单卡无独立验证 | 多卡性能调优待验证，8GB 单卡不是其证据 | 原理 P1、实践 P2，D15 | 画 TP 一层主要 collective；估算通信/计算量；区分同进程阶段调度与跨设备 PD 分离 |
 
 ### D. 通用工程基础
 
 | 能力点 | 目标水平 | 可确认的已有证据 | 当前判断与不确定性 | 是否补/优先级 | 快速验证 |
-|---|---|---|---|---|---|
-| Python 模块/测试/debug | L2 | dataclass、排序、状态机、pytest 及替身 harness | 代码较多，但独立编码贡献不明 | P0，D16 | 60min 不用助手写稳定候选排序和“按身份移除”，含重复分数/chunk/拒绝用例；解释失败原因而非只修断言 |
-| C++ 生命周期/所有权 | L2 小模块 | 未见本人 C++ 改动；原生比较器为继承代码 | **风险高、待诊断**，不能直接判定是最大短板 | 基础 P0，D17 | 60–90min 写 move-only Buffer 或 RAII 页句柄，说明 copy 为何禁用、move 后状态和异常释放；编译并用 ASan 检查 |
-| 数据结构/算法 | L2 常见中等题 | 使用 sort/dict/set，并非独立实现证明 | 面试手写能力待验证 | P0，D18 | 45min 用 list+hash 实现 LRU 并说明迭代器稳定性；另做 heap/区间合并题，分析复杂度及边界 |
-| OS/并发 | L1→L2 小队列 | 接触多进程/异步 IPC，无独立系统实验 | 操作系统/并发语义待验证 | P0 范围内补，D19 | 实现有界生产者消费者队列；解释 condition variable 谓词、spurious wakeup、进程/线程/GIL 区别及 RSS 增长排查 |
-| 网络/流式服务 | L2 计量和错误处理 | 当前 API/SSE/client 代码可读，旧计量有缺口 | 可靠 client 与排队边界待验证 | P0 基础，D20 | 对首包为空、终止帧、多事件同 read、连接池等待、超时各设计一个 collector 测试；从发请求前计时 |
-| Git/可复现交付 | L2 | 有 diff、测试与工件；源码已上传 | 分支/环境/忽略文件完整性需独立演示 | P0，D21 | 在新目录还原 H/S，证明 import origin；保存 untracked/JSON；解释为什么只有 git diff 或 uv.lock 不足以复现环境 |
+| --- | --- | --- | --- | --- | --- |
+| **Python 模块/测试/debug** | L2 | dataclass、排序、状态机、pytest 及替身 harness | 代码较多，但独立编码贡献不明 | P0，D16 | 60min 不用助手写稳定候选排序和“按身份移除”，含重复分数/chunk/拒绝用例；解释失败原因而非只修断言 |
+| **C++ 生命周期/所有权** | L2 小模块 | 未见本人 C++ 改动；原生比较器为继承代码 | **风险高、待诊断**，不能直接判定是最大短板 | 基础 P0，D17 | 60–90min 写 move-only Buffer 或 RAII 页句柄，说明 copy 为何禁用、move 后状态和异常释放；编译并用 ASan 检查 |
+| **数据结构/算法** | L2 常见中等题 | 使用 sort/dict/set，并非独立实现证明 | 面试手写能力待验证 | P0，D18 | 45min 用 list+hash 实现 LRU 并说明迭代器稳定性；另做 heap/区间合并题，分析复杂度及边界 |
+| **OS/并发** | L1→L2 小队列 | 接触多进程/异步 IPC，无独立系统实验 | 操作系统/并发语义待验证 | P0 范围内补，D19 | 实现有界生产者消费者队列；解释 condition variable 谓词、spurious wakeup、进程/线程/GIL 区别及 RSS 增长排查 |
+| **网络/流式服务** | L2 计量和错误处理 | 当前 API/SSE/client 代码可读，旧计量有缺口 | 可靠 client 与排队边界待验证 | P0 基础，D20 | 对首包为空、终止帧、多事件同 read、连接池等待、超时各设计一个 collector 测试；从发请求前计时 |
+| **Git/可复现交付** | L2 | 有 diff、测试与工件；源码已上传 | 分支/环境/忽略文件完整性需独立演示 | P0，D21 | 在新目录还原 H/S，证明 import origin；保存 untracked/JSON；解释为什么只有 git diff 或 uv.lock 不足以复现环境 |
 
 ### 5.1 第一周诊断与调整规则
 
@@ -252,21 +262,23 @@ B 的分数为 `实际估算缓存长度+N×有效等待轮`。只有本轮准�
 - 已有另一台电脑完成实验工具：先同步实际 commit、trace 和 run manifest，复核计时/token/错误对账后复用，不重写另一套。当前报告不假定那边已经完成。
 - 只有 CPU 数据或目标 GPU 暂不可用：先完成计数器、trace 与边界测试；GPU 结论标未验证。必要时延长对应验收到第 9 周，不用模拟数字替代。
 
+---
+
 ## 6. 学习优先级与明确取舍
 
 各时长是 192 小时总预算内的分配/重叠阅读范围，**不应逐行再相加**。资源编号 R1–R12 在第 11 节给出已检查链接。
 
 | 方向/优先级 | 为什么学、对应 JD | 与现项目联系及目标深度 | 建议投入 | 怎么验证/简历价值 |
-|---|---|---|---|---|
-| P0：Serving Benchmark 与正确性 | J01/J04/J07/J08；没有实测就无法支持性能叙事 | 修正请求起点、token/终态计数、重复与 SLO；能区分 client/server/GPU 区间 | 工具 + 分析约 30–40h，分散 W2–W4/W8；R3/R5 | 两类同 trace5 次配对报告，含失败与反例；直接支撑核心项目 |
-| P0：C++ 基础 + 算法 | 主样本 C++9/11 但含 OR；J04/J05/J11 强，J03 语言任选 | RAII、move、引用/生命周期、vector/list/unordered_map、mutex/条件变量；不先攻模板元编程 | 常规 C++24h+ 算法 24h；弱项按诊断调配；R6 | LRU/页句柄/有界队列、ASan/UBSan、限时手写；主要提升面试通过能力，练习不包装成大型项目 |
-| P0：推理计算与显存模型 | J01/J05/J08/J09 | 从实际 config 推 KV bytes、context/batch 效应；能解释 Prefill/Decode 和共享页 | 6–8h 穿插主线；R8/R9/R10 | 纸笔推导与实际计数对账；解释而非背术语 |
-| P0：GPU 端到端 Profiling | J01/J04，J05/J08 加分 | nsys 看请求链和等待；有限 ncu 解释一个 kernel，正式压测不带 profiler | 10–14h；R2/R3/R5 | 一份带时间轴/热点证据的定位报告，不把 timeline 重叠百分比当吞吐提升 |
-| P0：Linux/并发/网络的项目范围 | J02/J06/J07；project 本身需要 | 进程/线程、内存/生命周期、IPC、socket/SSE、event loop、背压/timeout | 10–14h，含 collector 及 C++ 队列；R6/R7/R11 | 能定位 client CPU 瓶颈和资源泄漏；能写正确超时/终态测试 |
-| P1：一个正式框架的源码与小改动 | J01/J03/J07/J08/J09 | 只选 SGLang，沿 scheduler→schedule policy→cache；锁 commit，读 2–3 个文件、跑一个小测试 | 12–16h，W6–W7；R8/R12 | 一份 mini→正式框架映射和一个可 review 补丁；PR 合并不作为可控 KPI |
-| P1：CUDA 基础后接 Triton 小算子 | J04/J05/J08/J10；为 Profiling 提供可控对象 | CUDA 索引/warp/coalescing/stream 基础→Triton 归约/RMSNorm；不写完整 Attention/GEMM 库 | 16–24h 上限；R1/R3/R4 | 正确性、不同 shape 计时、误差和瓶颈说明；适合作为主项目附录或辅助项目 |
-| P1：量化、TP/PD 分离原理 | J01/J08/J09；不同岗位深度不同 | 权重/KV 量化区别；TP 通信与 PD 跨设备成本；不在本轮对照中切精度 | 4–6h 概念；R9/R10 及正式框架文档 | 能回答设计题，不宣称生产调优 |
-| P2：多机通信、MoE EP、完整论文复现、编译器深挖 | J09/J10 等特定方向 | 单卡无法验证 NVLink/RDMA 性能；8 周内投入产出较低 | W9–W12 按真实 JD 择一；未选则 0h | 只有岗位确实要求再租多卡或做专项，不为凑技术栈堆项目 |
+| --- | --- | --- | --- | --- |
+| **P0：Serving Benchmark 与正确性** | J01/J04/J07/J08；没有实测就无法支持性能叙事 | 修正请求起点、token/终态计数、重复与 SLO；能区分 client/server/GPU 区间 | 工具 + 分析约 30–40h，分散 W2–W4/W8；R3/R5 | 两类同 trace5 次配对报告，含失败与反例；直接支撑核心项目 |
+| **P0：C++ 基础 + 算法** | 主样本 C++9/11 但含 OR；J04/J05/J11 强，J03 语言任选 | RAII、move、引用/生命周期、vector/list/unordered_map、mutex/条件变量；不先攻模板元编程 | 常规 C++24h+ 算法 24h；弱项按诊断调配；R6 | LRU/页句柄/有界队列、ASan/UBSan、限时手写；主要提升面试通过能力，练习不包装成大型项目 |
+| **P0：推理计算与显存模型** | J01/J05/J08/J09 | 从实际 config 推 KV bytes、context/batch 效应；能解释 Prefill/Decode 和共享页 | 6–8h 穿插主线；R8/R9/R10 | 纸笔推导与实际计数对账；解释而非背术语 |
+| **P0：GPU 端到端 Profiling** | J01/J04，J05/J08 加分 | nsys 看请求链和等待；有限 ncu 解释一个 kernel，正式压测不带 profiler | 10–14h；R2/R3/R5 | 一份带时间轴/热点证据的定位报告，不把 timeline 重叠百分比当吞吐提升 |
+| **P0：Linux/并发/网络的项目范围** | J02/J06/J07；project 本身需要 | 进程/线程、内存/生命周期、IPC、socket/SSE、event loop、背压/timeout | 10–14h，含 collector 及 C++ 队列；R6/R7/R11 | 能定位 client CPU 瓶颈和资源泄漏；能写正确超时/终态测试 |
+| **P1：一个正式框架的源码与小改动** | J01/J03/J07/J08/J09 | 只选 SGLang，沿 scheduler→schedule policy→cache；锁 commit，读 2–3 个文件、跑一个小测试 | 12–16h，W6–W7；R8/R12 | 一份 mini→正式框架映射和一个可 review 补丁；PR 合并不作为可控 KPI |
+| **P1：CUDA 基础后接 Triton 小算子** | J04/J05/J08/J10；为 Profiling 提供可控对象 | CUDA 索引/warp/coalescing/stream 基础→Triton 归约/RMSNorm；不写完整 Attention/GEMM 库 | 16–24h 上限；R1/R3/R4 | 正确性、不同 shape 计时、误差和瓶颈说明；适合作为主项目附录或辅助项目 |
+| **P1：量化、TP/PD 分离原理** | J01/J08/J09；不同岗位深度不同 | 权重/KV 量化区别；TP 通信与 PD 跨设备成本；不在本轮对照中切精度 | 4–6h 概念；R9/R10 及正式框架文档 | 能回答设计题，不宣称生产调优 |
+| **P2：多机通信、MoE EP、完整论文复现、编译器深挖** | J09/J10 等特定方向 | 单卡无法验证 NVLink/RDMA 性能；8 周内投入产出较低 | W9–W12 按真实 JD 择一；未选则 0h | 只有岗位确实要求再租多卡或做专项，不为凑技术栈堆项目 |
 
 ### 6.1 九个决策的直接答案
 
@@ -280,9 +292,11 @@ B 的分数为 `实际估算缓存长度+N×有效等待轮`。只有本轮准�
 8. **要第二个项目吗？** 最多一个小算子辅助线；LRU/队列/C++ 习题是基础训练，不再各立一个简历项目。正式 SGLang 阅读/补丁属于主线迁移。
 9. **Benchmark/Profiling 到什么程度？** 能独立解释“瓶颈在哪里、证据是什么、对照如何排除混杂、收益与代价是什么、失败如何计入”；仅会跑 nsys 或报 token/s 不够。复杂统计学、SASS 指令级优化不属于所有目标岗门槛。
 
+---
+
 ## 7. 8 周详细学习计划
 
-每周均为**主实践 16h+C++3h+ 算法 3h+ 求职/表达 2h=24h**；C++ 或算法任务特别计时的部分已在该预算里。所有编程/实验均为未来学习任务，本次没有执行。下列交付文件名为建议，并不表示已经存在。
+> 每周均为**主实践 16h+C++3h+ 算法 3h+ 求职/表达 2h=24h**；C++ 或算法任务特别计时的部分已在该预算里。所有编程/实验均为未来学习任务，本次没有执行。下列交付文件名为建议，并不表示已经存在。
 
 ### W1：10 月 15–21 日，建立个人能力和项目事实基线
 
@@ -371,22 +385,26 @@ B 的分数为 `实际估算缓存长度+N×有效等待轮`。只有本轮准�
 - **投入/交付**：主实践 16h 约结果/复现 8h、两次 45min 项目 mock 及复盘 4h、材料 4h；另 3+3+2h；交付简历 v2、项目 README、结果归档、2 次 mock 记录、广东岗位资格表。
 - **验收**：新目录按命令能还原至少一个核心 cell；5min 项目介绍、20min 源码追问、一个 C++ 小题均可完成；面试问题至少 15/20 达到第 10 节深度。若 GPU 仍未完成，只提交诚实的实现/CPU 结果与待测项，不填收益占位符。
 
+---
+
 ## 8. 第 9–12 周可选延伸：按实际反馈择项
 
 | 周/日期 | 触发条件与目标 | 任务、硬件和交付 | 上限/取舍 |
-|---|---|---|---|
-| W9，12 月 10–16 日 | 主实验已可信且面试追问预算策略 | 做 E05 固定 64/固定 24/动态各 5 次；验证真实 n 与预算区间；必要时加 target 过大恒 U 负控制 | 主实践≤16h；没有动态净收益也形成报告，不强求第三条 GPU 提升 |
-| W10，12 月 17–23 日 | 缓存吞吐证据不足或目标 JD 重 cache | 追加 W3 压力组，观察真实命中、shared recompute 与吞吐；若要 cold P99，扩大到足够 cold 样本并全组配对重做 | 只选缓存或更深 kernel 方向之一，不能同时开两条 |
-| W11，12 月 24–30 日 | 收到明确通信/分布式岗位反馈 | 先纸笔估算 TP 通信；有确认需求才安排短期双 GPU 试验并预先定预算。无多卡则 CPU 语义演示 + 成本模型，标未验证 NCCL 性能 | 不默认租卡；不模拟 H100 成绩；8GB 无法做的规模明确排除 |
-| W12，12 月 31 日–2027 年 1 月 6 日 | 根据 mock/投递反馈收口 | 选择补 C++、系统排障或修一个已有 PR；复核 1 月招聘与 2 月到岗条件；整理入职前复盘 | 不新增完整框架/论文项目；保持每天 3–4h，不透支到岗承诺 |
+| --- | --- | --- | --- |
+| **W9，12 月 10–16 日** | 主实验已可信且面试追问预算策略 | 做 E05 固定 64/固定 24/动态各 5 次；验证真实 n 与预算区间；必要时加 target 过大恒 U 负控制 | 主实践≤16h；没有动态净收益也形成报告，不强求第三条 GPU 提升 |
+| **W10，12 月 17–23 日** | 缓存吞吐证据不足或目标 JD 重 cache | 追加 W3 压力组，观察真实命中、shared recompute 与吞吐；若要 cold P99，扩大到足够 cold 样本并全组配对重做 | 只选缓存或更深 kernel 方向之一，不能同时开两条 |
+| **W11，12 月 24–30 日** | 收到明确通信/分布式岗位反馈 | 先纸笔估算 TP 通信；有确认需求才安排短期双 GPU 试验并预先定预算。无多卡则 CPU 语义演示 + 成本模型，标未验证 NCCL 性能 | 不默认租卡；不模拟 H100 成绩；8GB 无法做的规模明确排除 |
+| **W12，12 月 31 日–2027 年 1 月 6 日** | 根据 mock/投递反馈收口 | 选择补 C++、系统排障或修一个已有 PR；复核 1 月招聘与 2 月到岗条件；整理入职前复盘 | 不新增完整框架/论文项目；保持每天 3–4h，不透支到岗承诺 |
 
 2027 年 1 月至 2 月主要用于面试、错题和招聘资格确认，不默认还可同时新增一个大项目。若前 8 周核心未完成，W9–W12 先补核心，表中可选项顺延或删除。
+
+---
 
 ## 9. 项目完善、实验与简历竞争力
 
 ### 9.1 现项目能否作为核心项目
 
-**可以作为核心项目，但目前应以“实现与 CPU 验证”描述；真实 GPU 收益还不能填写。** 相比只部署一个 API，这个项目已经涉及候选重排、资源保护、缓存副作用、异步提交和边界测试，具有面试深挖空间。相比已完成生产优化的候选人，仍缺独立的 GPU 效果、瓶颈定位和正式框架协作证据。
+> **可以作为核心项目，但目前应以“实现与 CPU 验证”描述；真实 GPU 收益还不能填写。** 相比只部署一个 API，这个项目已经涉及候选重排、资源保护、缓存副作用、异步提交和边界测试，具有面试深挖空间。相比已完成生产优化的候选人，仍缺独立的 GPU 效果、瓶颈定位和正式框架协作证据。
 
 最有价值的三项主题，按近期收益排序：
 
@@ -399,13 +417,13 @@ D 公式简单、依赖 C、低 batch 下可能作用小，适合作为条件增
 ### 9.2 需要补的正确性与工程验收
 
 | 待补项 | 已覆盖与仍缺部分 | 最小新增证据 |
-|---|---|---|
-| GPU 数值与长度 | CPU 测试覆盖状态/预算；GPU 模型输出尚缺 | 相同 greedy 输入下 cache 冷/热、chunk 大小、graph 开/关、normal/overlap 的小集；实际 IDs/长度和终态对账，差异先定位，不用“文本差不多”代替 |
-| 真实 HTTP 生命周期 | CPU 正常/abort 已有若干测试；真实断连/超时未证实 | 请求断连、长 chunk abort、超长输入、单 token 输出、空文本、EOS 与重复 finish；检查请求终态与 Table/KV 回收 |
-| 物理页预算/异常 | 原审计已复现 page>1 紧容量反例；当前 FI 正式主组 page1 | 后续单独复现并建失败测试；如修复逐请求物理预留/回滚，另记 commit 并重测受影响组；不在本次规划偷偷修 |
-| 测量正确性 | 旧 client 存在起点/事件计数问题 | mock SSE、server 生成数/ack 数、I/O/失败对账、client lag、collector 开销校准、丢失事件计数 |
-| 原版与消融路径 | A 没有 CLI 关闭；B 依赖只读 probe，D 依赖 C | 固定上游 H 和优化 S；实际路径/预算/排序计数；非法单项 LOO 写未测，旧路径 adapter 不验证就不用 |
-| 故障/稳态 | 树完整性检查未完整实现、模拟资源断言范围有限 | 区分逻辑 KV 不足、GPU OOM、请求截断、超时和程序异常；保留原始失败 run；不捕获断言后继续沿用未知资源状态 |
+| --- | --- | --- |
+| **GPU 数值与长度** | CPU 测试覆盖状态/预算；GPU 模型输出尚缺 | 相同 greedy 输入下 cache 冷/热、chunk 大小、graph 开/关、normal/overlap 的小集；实际 IDs/长度和终态对账，差异先定位，不用“文本差不多”代替 |
+| **真实 HTTP 生命周期** | CPU 正常/abort 已有若干测试；真实断连/超时未证实 | 请求断连、长 chunk abort、超长输入、单 token 输出、空文本、EOS 与重复 finish；检查请求终态与 Table/KV 回收 |
+| **物理页预算/异常** | 原审计已复现 page>1 紧容量反例；当前 FI 正式主组 page1 | 后续单独复现并建失败测试；如修复逐请求物理预留/回滚，另记 commit 并重测受影响组；不在本次规划偷偷修 |
+| **测量正确性** | 旧 client 存在起点/事件计数问题 | mock SSE、server 生成数/ack 数、I/O/失败对账、client lag、collector 开销校准、丢失事件计数 |
+| **原版与消融路径** | A 没有 CLI 关闭；B 依赖只读 probe，D 依赖 C | 固定上游 H 和优化 S；实际路径/预算/排序计数；非法单项 LOO 写未测，旧路径 adapter 不验证就不用 |
+| **故障/稳态** | 树完整性检查未完整实现、模拟资源断言范围有限 | 区分逻辑 KV 不足、GPU OOM、请求截断、超时和程序异常；保留原始失败 run；不捕获断言后继续沿用未知资源状态 |
 
 “完整实现”只能指已有策略入口和正常路径，不代表所有异常、GPU、生产负载和多卡均完成验证。定位缺口本身有价值，报告应保留它。
 
@@ -414,13 +432,13 @@ D 公式简单、依赖 C、低 batch 下可能作用小，适合作为条件增
 完整设计仍见 [Benchmark规划](../benchmark_plan.md)、[消融矩阵](../ablation_matrix.md)、[Workload](../workload_design.md)、[执行手册](../benchmark_execution.md)。此处按学习/求职时间**缩小首轮交付范围**，不是将未测 cell 视为完成。
 
 | 包 | 配置与负载 | 正式重复/成本 | 必要指标 | 可以支持的结论 |
-|---|---|---|---|---|
-| L0 gate | Qwen3-0.6B BF16，page1/FI，G0→G1；32–64 个正确性/显存请求 | smoke/pilot，不计正式改善 | 实际 token、终态、峰值、余量、kernel/JIT 状态 | 目标机能否运行；不是性能收益 |
-| L1 阶段 | W4：80%128/256、20%2048/32；一个 H pilot 冻结的绝对到达率；H0000/S1000/S1010 | 3×5=15 run；GPU 等待估算每 run 数分钟到十余分钟，以 pilot 为准 | ITL P95/P99、每请求 TPOT、分组 TTFT/E2E、output 吞吐、Goodput、失败、phase/K 轨迹 | 原版净效果及 A 背景下 C 条件收益；两者分别归因 |
-| L2 公平 | W6：hot/cold 均 576/32，hot 共享 512；S1000/纯 LPM/S1100，同 trace 与 prime | 3×5=15 run | cold P95/max/超 5s/未准入率、hot 代价、output、真实缓存长度与重排/fallback 比例 | LPM→Aging 公平取舍；不能自动宣称缓存吞吐已提升 |
-| L3 可选缓存压力 | W3 固定工作集/再访问；同样三策略 | 额外 15 run，W10 可做 | token hit、shared recompute、evict、output/Goodput | 缓存选择是否真的减少重算并改变吞吐 |
-| L4 可选动态 | W5 固定 64、固定 24、dynamic32/floor8 | 额外 15 run，W9 可做 | n_decode→budget/actual chunk、ITL、TTFT、准备成本、output | 小预算效应与动态增量分离 |
-| K 辅助 micro | RMSNorm 的冻结 shape/dtype 矩阵、PyTorch 参考 | 短计时/5 个独立重复，单一小算子 | 误差、kernel 时长、访存量与 GB/s 估算、资源指标 | 只支持算子层结论，不自动支持模型 Serving 加速 |
+| --- | --- | --- | --- | --- |
+| **L0 gate** | Qwen3-0.6B BF16，page1/FI，G0→G1；32–64 个正确性/显存请求 | smoke/pilot，不计正式改善 | 实际 token、终态、峰值、余量、kernel/JIT 状态 | 目标机能否运行；不是性能收益 |
+| **L1 阶段** | W4：80%128/256、20%2048/32；一个 H pilot 冻结的绝对到达率；H0000/S1000/S1010 | 3×5=15 run；GPU 等待估算每 run 数分钟到十余分钟，以 pilot 为准 | ITL P95/P99、每请求 TPOT、分组 TTFT/E2E、output 吞吐、Goodput、失败、phase/K 轨迹 | 原版净效果及 A 背景下 C 条件收益；两者分别归因 |
+| **L2 公平** | W6：hot/cold 均 576/32，hot 共享 512；S1000/纯 LPM/S1100，同 trace 与 prime | 3×5=15 run | cold P95/max/超 5s/未准入率、hot 代价、output、真实缓存长度与重排/fallback 比例 | LPM→Aging 公平取舍；不能自动宣称缓存吞吐已提升 |
+| **L3 可选缓存压力** | W3 固定工作集/再访问；同样三策略 | 额外 15 run，W10 可做 | token hit、shared recompute、evict、output/Goodput | 缓存选择是否真的减少重算并改变吞吐 |
+| **L4 可选动态** | W5 固定 64、固定 24、dynamic32/floor8 | 额外 15 run，W9 可做 | n_decode→budget/actual chunk、ITL、TTFT、准备成本、output | 小预算效应与动态增量分离 |
+| **K 辅助 micro** | RMSNorm 的冻结 shape/dtype 矩阵、PyTorch 参考 | 短计时/5 个独立重复，单一小算子 | 误差、kernel 时长、访存量与 GB/s 估算、资源指标 | 只支持算子层结论，不自动支持模型 Serving 加速 |
 
 首轮必做**30 个正式 GPU run+smoke/pilot**，不同于完整 Benchmark 首轮 70run 建议；优先完成可解释证据，后续再扩展。若另一台已跑了部分矩阵，仅在 code/环境/trace/cache/SLO 等 key 相同且计量通过时复用。任何资源档位改变，都对该比较组共同重做。
 
@@ -444,69 +462,73 @@ TPOT 是每请求 `(最后token时刻-首token时刻)/(O-1)` 的均值再统计�
 1–5 为任务选择的主观评分，不是录用概率。除“重复程度”越低越好外，其余越高越有利；时间效率高表示更容易在当前预算内完成。
 
 | 选项 | 岗位相关性 | 补充能力 | 时间效率 | 8GB 可行性 | 面试展示 | 与现项目重复程度 | 判断 |
-|---|---:|---:|---:|---:|---:|---:|---|
-| A 完善 mini-sglang | 5 | 4 | 5 | 5 | 5 | 4 | **主线**，但必须补 GPU 证据/正确性，不再堆同类策略 |
-| B 小 CUDA/Triton 算子 | 4 | 5 | 4 | 5 | 4 | 1 | **唯一辅助线**，控制 16–24h；不是再造完整算子库 |
-| C 正式 SGLang 局部阅读/改动 | 5 | 4 | 3 | 3 | 5 | 3 | 纳入 A 的迁移验证，限定 12–16h；不作为另开的大项目 |
-| D 完整复现一篇系统论文 | 4 | 3 | 1 | 1 | 4 | 4 | 推迟；局部机制阅读/对照可留在主线，跨多卡原图不适合当前设备 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| **A 完善 mini-sglang** | 5 | 4 | 5 | 5 | 5 | 4 | **主线**，但必须补 GPU 证据/正确性，不再堆同类策略 |
+| **B 小 CUDA/Triton 算子** | 4 | 5 | 4 | 5 | 4 | 1 | **唯一辅助线**，控制 16–24h；不是再造完整算子库 |
+| **C 正式 SGLang 局部阅读/改动** | 5 | 4 | 3 | 3 | 5 | 3 | 纳入 A 的迁移验证，限定 12–16h；不作为另开的大项目 |
+| **D 完整复现一篇系统论文** | 4 | 3 | 1 | 1 | 4 | 4 | 推迟；局部机制阅读/对照可留在主线，跨多卡原图不适合当前设备 |
 
 若最想投 J04/J05/J10，后续需增加 C++/CUDA/架构和更强算子证据，并接受时长重分配；现阶段不以“同时覆盖所有岗”作为目标。若广东可投的 Runtime 岗位更合适，则维持 Python 系统主线，Kernel 是补充，不让其挤掉实验与面试。
 
 ### 9.6 可写与不可写的简历成果
 
-现在可写：“围绕 mini-sglang 实现只读 Radix 探测与条件提交、有效轮 LPM-Aging、有界 Decode 优先及保护性 Prefill 预算；建立 CPU 测试验证排序、引用/回收与阶段计数边界。”249 为套件总测试数，不能全部解释为你独立新增，也不能说完成了 249 项 GPU 测试。
+**现在可写：**“围绕 mini-sglang 实现只读 Radix 探测与条件提交、有效轮 LPM-Aging、有界 Decode 优先及保护性 Prefill 预算；建立 CPU 测试验证排序、引用/回收与阶段计数边界。”249 为套件总测试数，不能全部解释为你独立新增，也不能说完成了 249 项 GPU 测试。
 
-实测后再写：“在【GPU/模型/精度】【绝对到达率与混合长度】下，相对【明确基线 commit】将【server/client-ack】P99 ITL 降低【X%】，output 吞吐为基线【Y%】，长请求 TTFT 变化【Z%】，基于【重复数】次配对验证。”Aging 用 cold P95/max/超阈值率和吞吐代价；没有可靠 P99 就不用 P99。所有数字必须能从 raw run 与脚本还原。
+**实测后再写：**“在【GPU/模型/精度】【绝对到达率与混合长度】下，相对【明确基线 commit】将【server/client-ack】P99 ITL 降低【X%】，output 吞吐为基线【Y%】，长请求 TTFT 变化【Z%】，基于【重复数】次配对验证。”Aging 用 cold P95/max/超阈值率和吞吐代价；没有可靠 P99 就不用 P99。所有数字必须能从 raw run 与脚本还原。
 
-不能写：独立实现了整个 SGLang/Overlap/PagedAttention；保证无饥饿；2500 次 GPU 实验；动态预算必然提高 GPU 利用率；把全部组合提升累加为单项收益。也不能把“熟悉 vLLM/SGLang”只建立在调用了启动命令上。
+**不能写：**独立实现了整个 SGLang/Overlap/PagedAttention；保证无饥饿；2500 次 GPU 实验；动态预算必然提高 GPU 利用率；把全部组合提升累加为单项收益。也不能把“熟悉 vLLM/SGLang”只建立在调用了启动命令上。
+
+---
 
 ## 10. 实习面试准备：20 个问题，按当前优先级排列
 
 前 12 题直接围绕你的改动、计量和限制。建议两轮：先 5min 项目叙述，再从表中随机抽题；必须能给代码、反例或实验，不止背定义。每题按“解释清楚/能推演/有证据/能说局限”四项记录，弱项回到对应周，不无限加书单。
 
 | 顺序/优先级 | 问题 | 考察能力 | 回答应达到的深度与证据 |
-|---|---|---|---|
-| 1/P0 | 一个 HTTP 请求从进入到首 token 经历了什么？你改了哪些位置？ | 全链路与贡献边界 | 画 API/tokenizer/pending/admission/batch/engine/result 链，指出 A–D 函数及继承部分；能追 uid 和状态 |
-| 2/P0 | 原版 baseline 是谁？为什么默认关闭策略仍不是原版？ | 因果实验/代码身份 | 给上游 SHA、优化 SHA、公共观测 patch 和 import origin；解释 A 始终执行、inert bookkeeping；不把 before 分支直接当上游 |
-| 3/P0 | 为什么 probe 要只读？一个被拒请求改变 LRU 有什么后果？ | 缓存语义 | 手推未准入 hot probe 造成不真实热度；指出旧 match/split/touch 与新链差异，给拒绝快照测试 |
-| 4/P0 | probe 后树 split/evict 或 ref count 变化，你如何确认计划仍可用？ | 生命周期/一致性 | 区分 structure_version 失效重探测和同版本保护成本刷新；commit 不 lock/touch；承认串行前提与无通用回滚 |
-| 5/P0 | LPM-Aging 的“等了 N 轮”是什么？何时计数不涨？ | 公平定义 | NEW 成功准入才让仍待准入者加一；chunk-only/全拒绝不加；能在测试中定位，并解释不是墙钟 aging |
-| 6/P0 | K 次 Decode 后是否保证 Prefill 运行？ | 调度/资源约束 | K 数实际提交不是选择次数；只保证保护尝试；资源失败不 reset，不能保证首次准入/TTFT 上界 |
-| 7/P1 | 动态预算公式为什么减活跃 Decode 数？有哪些失效负载？ | 建模与边际归因 | 给 U/floor/target/n 公式及恒 U/floor 示例；说明 count 不含 context 成本、不是混合 batch；对比固定 24 而非只比 64 |
-| 8/P0 | 小 chunk 为什么仍可能页不够？ | 显存与准入 | 说明完整未来 KV 预留与本轮计算量区别；复述多个新请求尾页舍入反例；分清逻辑 allocator 断言和 GPU OOM |
-| 9/P0 | 你是否保证无饥饿？如何构造反例？ | 证明意识/边界 | Table/KV 不足、chunk 优先、失败即 break、队列 fallback；用有限 trace 的等待/删失指标作实证，不给无限服务保证 |
-| 10/P0 | TTFT、TPOT、ITL 怎么测？SSE 事件能否当 token？ | 流式计量 | 请求前起计；TPOT 每请求均值、ITL 逐间隔；根据本仓库 ack 链对账后分类；空文本/finish/DONE 和传输合并分别处理 |
-| 11/P0 | 为什么说你的提升可复现？什么结果会推翻结论？ | 科学实验/取舍 | 相同 trace/资源、5 次配对、cache/warmup、失败台账、client lag、thermal/graph；给无收益条件/吞吐 TTFT 代价；不能挑最佳 run |
-| 12/P0 | normal/overlap 中的提交、GPU 完成、结果回收顺序是什么？ | 异步依赖 | 标 stream wait/event 与现有 D2H 同步；说明为什么选择/host 计时不能替代 GPU 执行，为什么计 K 放在 submission |
-| 13/P0 | RAII、move 和智能指针如何避免页/句柄生命周期错误？ | 现代 C++ 基础 | 能写 move-only 小类、解释异常/析构、unique/shared 所有权；ref count 不自动等于线程安全；举实际悬挂引用例 |
-| 14/P0 | 用 C++ 实现 LRU，哪些操作会让迭代器失效？ | 数据结构/编码 | list+hash 的小实现、O(1) 目标、容量 0/更新/淘汰/迭代器测试；不能只给伪代码 |
-| 15/P0 | 有界队列如何避免忙等、丢通知与死锁？ | 并发/OS | 谓词 wait、锁范围、shutdown 和 spurious wakeup；能写测试；解释 Python GIL 和 async IO 分别解决什么 |
-| 16/P0 | 为什么客户端可能限制 GPU 测试结果？ | 服务/网络排障 | event loop lag、计划/实际发送、连接池/JSON 解析/CPU 竞争；用独立校准和实际 run 证据定位；开放环不暗改闭环 |
-| 17/P0 | GQA 模型 KV 占多少？Prefill/Decode 何时受计算或带宽限制？ | 模型/性能模型 | 实际 config 推 112KiB/token，给 batch/context 与权重/KV 流量估算；不把 token 数直接当 FLOPs |
-| 18/P1 | CUDA 中访存合并、block/warp、shared memory 如何影响性能？ | GPU 基础 | 用 vector add/归约代码和连续/跨步对照解释；知 barrier 边界、register/occupancy 代价，不要求背所有 SM 参数 |
-| 19/P1 | 你的 Triton 算子为何快/不快？如何验证数值？ | 算子/Profiling | shape、dtype、mask/stride、累加精度、JIT/warmup、真实计时、带宽估算；区分 launch-bound 和 memory-bound，不声称全面胜库 |
-| 20/P1 原理/P2 实践 | TP、PP 与 PD 分离是什么？单卡实验能证明什么？ | 分布式设计 | 画一次 TP 通信与 PD KV 传输；解释带宽/延迟/负载均衡代价；明确没有多 GPU 时不能给 NCCL/RDMA 实测结论 |
+| --- | --- | --- | --- |
+| **1/P0** | 一个 HTTP 请求从进入到首 token 经历了什么？你改了哪些位置？ | 全链路与贡献边界 | 画 API/tokenizer/pending/admission/batch/engine/result 链，指出 A–D 函数及继承部分；能追 uid 和状态 |
+| **2/P0** | 原版 baseline 是谁？为什么默认关闭策略仍不是原版？ | 因果实验/代码身份 | 给上游 SHA、优化 SHA、公共观测 patch 和 import origin；解释 A 始终执行、inert bookkeeping；不把 before 分支直接当上游 |
+| **3/P0** | 为什么 probe 要只读？一个被拒请求改变 LRU 有什么后果？ | 缓存语义 | 手推未准入 hot probe 造成不真实热度；指出旧 match/split/touch 与新链差异，给拒绝快照测试 |
+| **4/P0** | probe 后树 split/evict 或 ref count 变化，你如何确认计划仍可用？ | 生命周期/一致性 | 区分 structure_version 失效重探测和同版本保护成本刷新；commit 不 lock/touch；承认串行前提与无通用回滚 |
+| **5/P0** | LPM-Aging 的“等了 N 轮”是什么？何时计数不涨？ | 公平定义 | NEW 成功准入才让仍待准入者加一；chunk-only/全拒绝不加；能在测试中定位，并解释不是墙钟 aging |
+| **6/P0** | K 次 Decode 后是否保证 Prefill 运行？ | 调度/资源约束 | K 数实际提交不是选择次数；只保证保护尝试；资源失败不 reset，不能保证首次准入/TTFT 上界 |
+| **7/P1** | 动态预算公式为什么减活跃 Decode 数？有哪些失效负载？ | 建模与边际归因 | 给 U/floor/target/n 公式及恒 U/floor 示例；说明 count 不含 context 成本、不是混合 batch；对比固定 24 而非只比 64 |
+| **8/P0** | 小 chunk 为什么仍可能页不够？ | 显存与准入 | 说明完整未来 KV 预留与本轮计算量区别；复述多个新请求尾页舍入反例；分清逻辑 allocator 断言和 GPU OOM |
+| **9/P0** | 你是否保证无饥饿？如何构造反例？ | 证明意识/边界 | Table/KV 不足、chunk 优先、失败即 break、队列 fallback；用有限 trace 的等待/删失指标作实证，不给无限服务保证 |
+| **10/P0** | TTFT、TPOT、ITL 怎么测？SSE 事件能否当 token？ | 流式计量 | 请求前起计；TPOT 每请求均值、ITL 逐间隔；根据本仓库 ack 链对账后分类；空文本/finish/DONE 和传输合并分别处理 |
+| **11/P0** | 为什么说你的提升可复现？什么结果会推翻结论？ | 科学实验/取舍 | 相同 trace/资源、5 次配对、cache/warmup、失败台账、client lag、thermal/graph；给无收益条件/吞吐 TTFT 代价；不能挑最佳 run |
+| **12/P0** | normal/overlap 中的提交、GPU 完成、结果回收顺序是什么？ | 异步依赖 | 标 stream wait/event 与现有 D2H 同步；说明为什么选择/host 计时不能替代 GPU 执行，为什么计 K 放在 submission |
+| **13/P0** | RAII、move 和智能指针如何避免页/句柄生命周期错误？ | 现代 C++ 基础 | 能写 move-only 小类、解释异常/析构、unique/shared 所有权；ref count 不自动等于线程安全；举实际悬挂引用例 |
+| **14/P0** | 用 C++ 实现 LRU，哪些操作会让迭代器失效？ | 数据结构/编码 | list+hash 的小实现、O(1) 目标、容量 0/更新/淘汰/迭代器测试；不能只给伪代码 |
+| **15/P0** | 有界队列如何避免忙等、丢通知与死锁？ | 并发/OS | 谓词 wait、锁范围、shutdown 和 spurious wakeup；能写测试；解释 Python GIL 和 async IO 分别解决什么 |
+| **16/P0** | 为什么客户端可能限制 GPU 测试结果？ | 服务/网络排障 | event loop lag、计划/实际发送、连接池/JSON 解析/CPU 竞争；用独立校准和实际 run 证据定位；开放环不暗改闭环 |
+| **17/P0** | GQA 模型 KV 占多少？Prefill/Decode 何时受计算或带宽限制？ | 模型/性能模型 | 实际 config 推 112KiB/token，给 batch/context 与权重/KV 流量估算；不把 token 数直接当 FLOPs |
+| **18/P1** | CUDA 中访存合并、block/warp、shared memory 如何影响性能？ | GPU 基础 | 用 vector add/归约代码和连续/跨步对照解释；知 barrier 边界、register/occupancy 代价，不要求背所有 SM 参数 |
+| **19/P1** | 你的 Triton 算子为何快/不快？如何验证数值？ | 算子/Profiling | shape、dtype、mask/stride、累加精度、JIT/warmup、真实计时、带宽估算；区分 launch-bound 和 memory-bound，不声称全面胜库 |
+| **20/P1 原理/P2 实践** | TP、PP 与 PD 分离是什么？单卡实验能证明什么？ | 分布式设计 | 画一次 TP 通信与 PD KV 传输；解释带宽/延迟/负载均衡代价；明确没有多 GPU 时不能给 NCCL/RDMA 实测结论 |
 
 算法准备以哈希/链表/堆/二分、树图遍历、区间/滑动窗口为主，每周 2 个新题 +2 次复做；记录复杂度、边界和调试。8 周约 32 次限时练习，不以刷题数量代替解释。另每周用 15min 复述一个项目反例，纳入求职/表达 2h 预算。
+
+---
 
 ## 11. 推荐资源与阅读范围
 
 以下链接均在本次通过浏览打开；官方框架文档可能跳转，表中优先写已到达的地址。网页版本与目标机安装版本不一定一致（例如 PyTorch 当前文档比审计 torch2.9.1 更新），执行 API/命令以锁定版本及本机 help 核对。**选章节完成任务，不要求通读所有资源。**
 
 | 编号 | 资源及真实链接 | 本轮只读什么/用于何处 |
-|---|---|---|
-| R1 | [NVIDIA CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-programming-guide/) | programming model、SIMT、memory 与 asynchronous execution；支持 W5。高级 Tile/TMA/多 GPU 章节不作 8 周必修 |
-| R2 | [Nsight Systems User Guide](https://docs.nvidia.com/nsight-systems/UserGuide/index.html) | focused profiling、NVTX、CUDA timeline；学习截取 warm 小区间，解释 CPU/GPU 依赖，W3/W8 |
-| R3 | [Nsight Compute Profiling Guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html) | kernel 级瓶颈、memory/compute 与资源指标；先一个 kernel/少量 section，避免全量采集改变主 benchmark |
-| R4 | [Triton vector add](https://triton-lang.org/main/getting-started/tutorials/01-vector-add.html)、[fused softmax](https://triton-lang.org/main/getting-started/tutorials/02-fused-softmax.html) | program_id、mask、归约和计时；在此基础上独立写 RMSNorm，不把复制教程称自研优化 |
-| R5 | [PyTorch Profiler recipe](https://docs.pytorch.org/tutorials/recipes/recipes/profiler_recipe.html) | warmup/schedule 与 CPU/CUDA 活动；用于排查而非给正式 Serving 测量额外加同步 |
-| R6 | [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) | R 资源管理、C 类、CP 并发相关条款，配小程序；RAII/move/容器/锁足够开始，不先追模板技巧 |
-| R7 | [OSTEP，作者公开教材](https://pages.cs.wisc.edu/~remzi/OSTEP/) | 地址空间、线程、锁/condition variables、CPU 调度相关章节；不要求整套 OS lab |
-| R8 | [SGLang论文](https://arxiv.org/abs/2312.07104) | Radix 缓存/Serving 设计和实验边界；作为主论文读关键部分，映射 A/B 及继承能力 |
-| R9 | [PagedAttention论文](https://arxiv.org/abs/2309.06180) | 物理块、共享与内存管理概念；比较 mini 的实现/约束，非复现原论文 GPU 结果 |
-| R10 | [Sarathi-Serve论文](https://arxiv.org/abs/2403.02310) | chunk 与吞吐/延迟取舍、与本项目 Prefill-only 动态预算区别；不套用其服务器参数 |
-| R11 | [Beej's Guide to Network Programming](https://beej.us/guide/bgnet/html/split/) | socket 生命周期、partial send/recv、阻塞与 poll；联系 HTTP 流/背压，非从零重写网络库 |
-| R12 | [SGLang贡献指南](https://docs.sglang.io/docs/developer_guide/contribution_guide)、[scheduler源码](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/managers/scheduler.py)、[schedule policy源码](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/managers/schedule_policy.py) | W6 固定 commit 后阅读局部；了解测试/贡献边界，社区 CI 权限/资源不由个人完全控制 |
+| --- | --- | --- |
+| **R1** | [NVIDIA CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-programming-guide/) | programming model、SIMT、memory 与 asynchronous execution；支持 W5。高级 Tile/TMA/多 GPU 章节不作 8 周必修 |
+| **R2** | [Nsight Systems User Guide](https://docs.nvidia.com/nsight-systems/UserGuide/index.html) | focused profiling、NVTX、CUDA timeline；学习截取 warm 小区间，解释 CPU/GPU 依赖，W3/W8 |
+| **R3** | [Nsight Compute Profiling Guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html) | kernel 级瓶颈、memory/compute 与资源指标；先一个 kernel/少量 section，避免全量采集改变主 benchmark |
+| **R4** | [Triton vector add](https://triton-lang.org/main/getting-started/tutorials/01-vector-add.html)、[fused softmax](https://triton-lang.org/main/getting-started/tutorials/02-fused-softmax.html) | program_id、mask、归约和计时；在此基础上独立写 RMSNorm，不把复制教程称自研优化 |
+| **R5** | [PyTorch Profiler recipe](https://docs.pytorch.org/tutorials/recipes/recipes/profiler_recipe.html) | warmup/schedule 与 CPU/CUDA 活动；用于排查而非给正式 Serving 测量额外加同步 |
+| **R6** | [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) | R 资源管理、C 类、CP 并发相关条款，配小程序；RAII/move/容器/锁足够开始，不先追模板技巧 |
+| **R7** | [OSTEP，作者公开教材](https://pages.cs.wisc.edu/~remzi/OSTEP/) | 地址空间、线程、锁/condition variables、CPU 调度相关章节；不要求整套 OS lab |
+| **R8** | [SGLang论文](https://arxiv.org/abs/2312.07104) | Radix 缓存/Serving 设计和实验边界；作为主论文读关键部分，映射 A/B 及继承能力 |
+| **R9** | [PagedAttention论文](https://arxiv.org/abs/2309.06180) | 物理块、共享与内存管理概念；比较 mini 的实现/约束，非复现原论文 GPU 结果 |
+| **R10** | [Sarathi-Serve论文](https://arxiv.org/abs/2403.02310) | chunk 与吞吐/延迟取舍、与本项目 Prefill-only 动态预算区别；不套用其服务器参数 |
+| **R11** | [Beej's Guide to Network Programming](https://beej.us/guide/bgnet/html/split/) | socket 生命周期、partial send/recv、阻塞与 poll；联系 HTTP 流/背压，非从零重写网络库 |
+| **R12** | [SGLang贡献指南](https://docs.sglang.io/docs/developer_guide/contribution_guide)、[scheduler源码](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/managers/scheduler.py)、[schedule policy源码](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/managers/schedule_policy.py) | W6 固定 commit 后阅读局部；了解测试/贡献边界，社区 CI 权限/资源不由个人完全控制 |
 
 JD 来源集中在第 3 节各条，保留官方/平台/索引/转录差异。不要用搜索结果的“刚刚发布”代替可验证日期，也不要把搜索平台自动生成的岗位解读当招聘方要求。
 
@@ -516,18 +538,20 @@ JD 来源集中在第 3 节各条，保留官方/平台/索引/转录差异。�
 
 项目材料以代码 SHA、运行配置、模型/tokenizer hash、输入 trace、raw results、聚合脚本、失败台账和解释报告为核心。仓库忽略 JSON/JSONL，归档时显式登记，不只看 git status；依赖 lock 也需和实际环境核对，当前 FlashInfer lock 与审计安装版本有差异。若路径或 CI 环境变化，先做小范围复现，再沿用结论。
 
+---
+
 ## 12. 如果明天开始，每天只有 3–4 小时：前 7 天安排
 
 从 2026-10-15 开始。前 6 天各 3.5h，第 7 天 3h，总 24h；其中主线 16h、C++3h、算法 3h、求职/表达 2h，和 W1 预算一致。目标 GPU 暂不可用时，环境项标“目标机待验”，先推进 CPU 和纸笔任务。
 
 | 日期 | 具体行动与时间分配 | 当天必须留下的成果/验收 |
-|---|---|---|
-| D1，10 月 15 日 | 2h 确认本地/远端 SHA、原版来源、项目文件和一次请求调用链；0.5h C++ 生命周期小例；0.5h 哈希题；0.5h 填写广东/2 月/4 天/3–4 个月及毕业条件 | `baseline_identity.md`、一张调用链草图；能明确指出哪些是继承机制；资格表不把研一默认成 2027 届 |
-| D2，10 月 16 日 | 2.5h 阅读 probe/refresh/commit 和准入测试，纸笔算 Qwen KV；0.5h C++ 引用/const；0.5h 链表题 | 手推 partial match、ref count/evictable 变化，写出 112KiB/token；说清一个拒绝请求不应触发的副作用 |
-| D3，10 月 17 日 | 3h 读阶段 K 计数、动态预算和 Aging；分别画一次失败重试与 chunk-only pass；0.5h 复做 D1 算法题 | 两张事件序列图和 3 个反例：K 不保准入、Aging 不等秒、target 大导致恒 U |
-| D4，10 月 18 日 | 2h 审旧 client 计时/事件汇总，列 mock SSE 用例；1h 完成限时 C++ RAII 诊断；0.5h heap 题 | 找到计时起点问题和控制帧误计；保存 C++ 第一次实现、编译错误及修复；据此决定下周是否加时 |
-| D5，10 月 19 日 | 2h 独立写简化稳定候选排序 + 身份移除测试；0.5h C++ 容器/迭代器；0.5h 复做链表题；0.5h 核验 J12/J08/J11 的资格缺口 | 小测试覆盖 chunk、同分、首候选拒绝；将未知天数/月数写 NA，不能自行补成满足 |
-| D6，10 月 20 日 | 2.5h 检查 fake forward/历史 JSON、已知页舍入反例及目标机环境；0.5h C++ 所有权练习；0.5h 二分题 | `evidence_limits.md`：CPU 证据能/不能说明什么；环境版本表，目标 GPU 未测项明确标注；不跑全矩阵 |
-| D7，10 月 21 日 | 2h 整理一页 A–D 设计/限制和 W2 工具清单；1h 录一次 5min 项目介绍并做追问/资格复盘 | 不看笔记解释调用链和 5 个限制；列下一周 3 个可验任务。若 C++/Python 诊断失败，缩辅助 scope，不新增学习方向 |
+| --- | --- | --- |
+| **D1，10 月 15 日** | 2h 确认本地/远端 SHA、原版来源、项目文件和一次请求调用链；0.5h C++ 生命周期小例；0.5h 哈希题；0.5h 填写广东/2 月/4 天/3–4 个月及毕业条件 | `baseline_identity.md`、一张调用链草图；能明确指出哪些是继承机制；资格表不把研一默认成 2027 届 |
+| **D2，10 月 16 日** | 2.5h 阅读 probe/refresh/commit 和准入测试，纸笔算 Qwen KV；0.5h C++ 引用/const；0.5h 链表题 | 手推 partial match、ref count/evictable 变化，写出 112KiB/token；说清一个拒绝请求不应触发的副作用 |
+| **D3，10 月 17 日** | 3h 读阶段 K 计数、动态预算和 Aging；分别画一次失败重试与 chunk-only pass；0.5h 复做 D1 算法题 | 两张事件序列图和 3 个反例：K 不保准入、Aging 不等秒、target 大导致恒 U |
+| **D4，10 月 18 日** | 2h 审旧 client 计时/事件汇总，列 mock SSE 用例；1h 完成限时 C++ RAII 诊断；0.5h heap 题 | 找到计时起点问题和控制帧误计；保存 C++ 第一次实现、编译错误及修复；据此决定下周是否加时 |
+| **D5，10 月 19 日** | 2h 独立写简化稳定候选排序 + 身份移除测试；0.5h C++ 容器/迭代器；0.5h 复做链表题；0.5h 核验 J12/J08/J11 的资格缺口 | 小测试覆盖 chunk、同分、首候选拒绝；将未知天数/月数写 NA，不能自行补成满足 |
+| **D6，10 月 20 日** | 2.5h 检查 fake forward/历史 JSON、已知页舍入反例及目标机环境；0.5h C++ 所有权练习；0.5h 二分题 | `evidence_limits.md`：CPU 证据能/不能说明什么；环境版本表，目标 GPU 未测项明确标注；不跑全矩阵 |
+| **D7，10 月 21 日** | 2h 整理一页 A–D 设计/限制和 W2 工具清单；1h 录一次 5min 项目介绍并做追问/资格复盘 | 不看笔记解释调用链和 5 个限制；列下一周 3 个可验任务。若 C++/Python 诊断失败，缩辅助 scope，不新增学习方向 |
 
-前 7 天的最高优先级是**确认你能解释和独立验证已有改动，并把后续 GPU 实验的身份、计时和正确性定义固定下来**。完成这些之后，再开始把性能数据写成简历；不需要先把 CUDA、分布式和所有推理框架全部学完。
+> 前 7 天的最高优先级是**确认你能解释和独立验证已有改动，并把后续 GPU 实验的身份、计时和正确性定义固定下来**。完成这些之后，再开始把性能数据写成简历；不需要先把 CUDA、分布式和所有推理框架全部学完。
